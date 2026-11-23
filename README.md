@@ -34,12 +34,12 @@ Usuario ──HTTPS──▶ CloudFront ──▶ S3 (sitio estático: index.htm
 | IAM y mínimo privilegio | Un rol por componente, cada uno con solo los permisos que usa |
 | Pago por uso y elasticidad | Costo ~0 en reposo; S3 Vectors en vez de OpenSearch (que cobra fijo) |
 | Etiquetado y costos | `default_tags` en todos los recursos para filtrar en Cost Explorer |
-| Portabilidad | El modelo generador es una variable (`generation_model_arn`); se cambia sin tocar código |
+| Portabilidad | El modelo generador es una variable (`generation_model_id`); se cambia sin tocar código |
 | Observabilidad | Logs de las Lambdas en CloudWatch |
 
 ## Cómo correrlo
 
-Requisitos: AWS CLI v2, Terraform ≥ 1.6, una cuenta de AWS con Bedrock disponible en `us-east-1`.
+Requisitos: AWS CLI v2, Terraform ≥ 1.6, una cuenta de AWS con Bedrock. Por defecto se despliega en `us-east-2`: las cuentas nuevas creadas como "proyecto" tienen una SCP que solo permite crear recursos regionales en la región asignada (Américas → `us-east-2`).
 
 ```bash
 make login     # aws login --profile poc (abre el navegador)

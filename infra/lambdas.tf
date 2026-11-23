@@ -20,7 +20,7 @@ locals {
     DOCS_BUCKET       = aws_s3_bucket.docs.id
     KNOWLEDGE_BASE_ID = aws_bedrockagent_knowledge_base.docs.id
     DATA_SOURCE_ID    = aws_bedrockagent_data_source.docs.data_source_id
-    MODEL_ARN         = var.generation_model_arn
+    MODEL_ARN         = local.generation_model_arn
   }
 }
 

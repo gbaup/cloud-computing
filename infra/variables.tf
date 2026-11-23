@@ -5,9 +5,9 @@ variable "project" {
 }
 
 variable "region" {
-  description = "Región de AWS (us-east-1 tiene más modelos de Bedrock y S3 Vectors)."
+  description = "Región de AWS. Las cuentas de proyecto solo permiten crear recursos en la región asignada (Américas: us-east-2)."
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 variable "embedding_model_id" {
@@ -22,8 +22,8 @@ variable "embedding_dimensions" {
   default     = 1024
 }
 
-variable "generation_model_arn" {
-  description = "Modelo o inference profile que genera las respuestas. Se puede cambiar sin tocar el resto."
+variable "generation_model_id" {
+  description = "Modelo que genera las respuestas. Se puede cambiar sin tocar el resto."
   type        = string
-  default     = "arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0"
+  default     = "amazon.nova-lite-v1:0"
 }

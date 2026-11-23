@@ -1,7 +1,27 @@
-infra/.terraform/
-infra/.build/
-infra/*.tfstate
-infra/*.tfstate.*
-infra/.terraform.tfstate.lock.info
+# Terraform: estado local (puede contener datos sensibles), providers descargados y artefactos de build
+**/.terraform/
+**/.build/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+*.tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Python
 __pycache__/
+*.py[cod]
+.venv/
+
+# Entorno y secretos
+.env
+.env.*
+
+# Editores y sistema operativo
+.vscode/
+.idea/
 .DS_Store

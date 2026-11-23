@@ -1,5 +1,6 @@
 locals {
-  embedding_model_arn = "arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}"
+  embedding_model_arn  = "arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}"
+  generation_model_arn = "arn:aws:bedrock:${var.region}::foundation-model/${var.generation_model_id}"
 }
 
 # Rol que asume Bedrock para leer los docs, generar embeddings y escribir vectores.

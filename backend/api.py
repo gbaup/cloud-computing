@@ -5,6 +5,7 @@ import os
 import re
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 DOCS_BUCKET = os.environ["DOCS_BUCKET"]
@@ -14,7 +15,13 @@ MODEL_ARN = os.environ["MODEL_ARN"]
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".html", ".csv", ".doc", ".docx", ".xls", ".xlsx"}
 
-s3 = boto3.client("s3")
+# Endpoint regional: con el global, las URLs prefirmadas responden 307 y el navegador no sigue el redirect.
+REGION = os.environ["AWS_REGION"]
+s3 = boto3.client(
+    "s3",
+    endpoint_url=f"https://s3.{REGION}.amazonaws.com",
+    config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+)
 agent = boto3.client("bedrock-agent")
 agent_runtime = boto3.client("bedrock-agent-runtime")
 
@@ -87,10 +94,11 @@ def ask(body):
 
 def attach_citations(result):
     """Inserta marcadores ⟦n⟧ en el texto y devuelve la lista de fuentes numeradas."""
-    sources, index_by_key, parts = [], {}, []
+    text = result["output"]["text"]
+    sources, index_by_key = [], {}
+    out, cursor = [], 0
 
     for citation in result.get("citations", []):
-        parts.append(citation["generatedResponsePart"]["textResponsePart"]["text"])
         markers = []
         for ref in citation.get("retrievedReferences", []):
             uri = ref.get("location", {}).get("s3Location", {}).get("uri", "")
@@ -101,18 +109,21 @@ def attach_citations(result):
                 index_by_key[key] = len(sources)
             if index_by_key[key] not in markers:
                 markers.append(index_by_key[key])
-        parts.append("".join(f"⟦{n}⟧" for n in markers))
+        if not markers:
+            continue
 
-    text = result["output"]["text"]
-    if not sources:
-        return text, []
+        # Ubicamos el fragmento citado en el texto original para no perder saltos de línea.
+        part = citation["generatedResponsePart"]["textResponsePart"]["text"].rstrip()
+        found = text.find(part, cursor)
+        if found < 0:
+            continue
+        insert_at = found + len(part)
+        out.append(text[cursor:insert_at])
+        out.append("".join(f"⟦{n}⟧" for n in markers))
+        cursor = insert_at
 
-    # Texto que quedó después de la última cita.
-    last = result["citations"][-1]["generatedResponsePart"]["textResponsePart"]["text"]
-    tail_start = text.rfind(last)
-    if tail_start >= 0:
-        parts.append(text[tail_start + len(last):])
-    return "".join(parts), sources
+    out.append(text[cursor:])
+    return "".join(out), sources
 
 
 def list_documents():

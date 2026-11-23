@@ -4,7 +4,7 @@ TF := terraform -chdir=infra
 .PHONY: login deploy seed url destroy
 
 login:  ## Inicia sesión en la cuenta del POC (abre el navegador)
-	aws login --profile $(AWS_PROFILE)
+	aws login --profile $(AWS_PROFILE) --region us-east-2
 
 deploy:  ## Crea/actualiza toda la infraestructura
 	$(TF) init -upgrade
