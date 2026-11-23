@@ -57,7 +57,7 @@ with Diagram(
 
             with Cluster("Amazon Bedrock (servicios administrados)"):
                 kb = Bedrock("Knowledge Base\nchunking + búsqueda\nfiltrada por materia")
-                titan = Bedrock("Titan Embeddings v2\n(vectores)")
+                titan = Bedrock("Titan Embeddings v2\n(vectoriza fragmentos\ny preguntas)")
                 nova = Bedrock("Nova Lite\n(generación + clasificación)")
                 vectors = SimpleStorageServiceS3Bucket("S3 Vectors\níndice vectorial")
 
@@ -73,8 +73,9 @@ with Diagram(
     user >> flow(QUERY, "1. pregunta") >> api_gw >> flow(QUERY, "2") >> api_fn
     api_fn >> flow(QUERY, "3. ¿depende de la materia?") >> nova
     api_fn >> flow(QUERY, "4. RetrieveAndGenerate") >> kb
-    kb >> flow(QUERY, "5. búsqueda") >> vectors
-    kb >> flow(QUERY, "6. respuesta con citas") >> nova
+    kb >> flow(QUERY, "5. vectoriza la pregunta") >> titan
+    kb >> flow(QUERY, "6. búsqueda") >> vectors
+    kb >> flow(QUERY, "7. respuesta con citas") >> nova
 
     # Ingesta
     user >> flow(INGEST, "a. PUT con URL prefirmada") >> docs

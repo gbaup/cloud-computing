@@ -25,3 +25,6 @@ __pycache__/
 .vscode/
 .idea/
 .DS_Store
+
+# Material de las materias: pesado y no se distribuye (se sube al bucket con make seed)
+sample-docs/

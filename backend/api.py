@@ -17,6 +17,7 @@ MODEL_ARN = os.environ["MODEL_ARN"]
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".html", ".csv", ".doc", ".docx", ".xls", ".xlsx"}
 METADATA_SUFFIX = ".metadata.json"
 ALL_SUBJECTS = "__todas__"
+NOT_FOUND_ANSWER = "No encontré información sobre eso en los documentos cargados."
 
 # Endpoint regional: con el global, las URLs prefirmadas responden 307 y el navegador no sigue el redirect.
 REGION = os.environ["AWS_REGION"]
@@ -111,6 +112,10 @@ def ask(body):
         result = agent_runtime.retrieve_and_generate(**request)
 
     answer, sources = attach_citations(result)
+    # Sin ninguna cita la respuesta no se apoya en los documentos: a veces el modelo
+    # devuelve texto sin sentido, así que lo decimos explícitamente.
+    if not sources:
+        answer = NOT_FOUND_ANSWER
     return {"answer": answer, "sources": sources, "sessionId": result["sessionId"], "materia": subject}
 
 

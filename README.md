@@ -36,7 +36,7 @@ flowchart LR
             subgraph bedrock["Amazon Bedrock (servicios administrados)"]
                 kb@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Knowledge Base<br/>chunking + búsqueda<br/>filtrada por materia", pos: "b", w: 56, h: 56, constraint: "on" }
                 nova@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Nova Lite<br/>generación + clasificación", pos: "b", w: 56, h: 56, constraint: "on" }
-                titan@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Titan Embeddings v2<br/>vectores", pos: "b", w: 56, h: 56, constraint: "on" }
+                titan@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Titan Embeddings v2<br/>vectoriza fragmentos y preguntas", pos: "b", w: 56, h: 56, constraint: "on" }
                 vectors@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/s3.png", label: "S3 Vectors<br/>índice vectorial", pos: "b", w: 56, h: 56, constraint: "on" }
             end
         end
@@ -52,27 +52,28 @@ flowchart LR
     user -->|HTTPS| cdn
     cdn -->|OAC| web
 
-    %% Consulta (links 2-7)
+    %% Consulta (links 2-8)
     user -->|"1. pregunta"| apigw
     apigw -->|2| apifn
     apifn -->|"3. ¿depende de la materia?"| nova
     apifn -->|"4. RetrieveAndGenerate"| kb
-    kb -->|"5. búsqueda"| vectors
-    kb -->|"6. respuesta con citas"| nova
+    kb -->|"5. vectoriza la pregunta"| titan
+    kb -->|"6. búsqueda"| vectors
+    kb -->|"7. respuesta con citas"| nova
 
-    %% Ingesta (links 8-12)
+    %% Ingesta (links 9-13)
     user -->|"a. PUT con URL prefirmada"| docs
     docs -->|"b. evento S3"| ingfn
     ingfn -->|"c. StartIngestionJob"| kb
     kb -->|"d. embeddings"| titan
     kb -->|"e. guarda vectores"| vectors
 
-    %% Transversal: sin flechas, solo para alinear (links 13-14)
+    %% Transversal: sin flechas, solo para alinear (links 14-15)
     tf ~~~ iam ~~~ cw
 
     linkStyle 0,1 stroke:#7a7a7a,stroke-width:2px
-    linkStyle 2,3,4,5,6,7 stroke:#3d4fd6,stroke-width:2px
-    linkStyle 8,9,10,11,12 stroke:#d9822b,stroke-width:2px
+    linkStyle 2,3,4,5,6,7,8 stroke:#3d4fd6,stroke-width:2px
+    linkStyle 9,10,11,12,13 stroke:#d9822b,stroke-width:2px
 ```
 
 </details>
@@ -83,7 +84,7 @@ flowchart LR
 
 **Aclaración de materia:** antes de responder, la API revisa si la pregunta nombra una materia. Si no la nombra y hay más de una cargada, una llamada corta al modelo (temperatura 0) clasifica si la respuesta depende de la materia (evaluación, fechas, asistencia…). En ese caso devuelve "¿A cuál te referís?" con botones, y la respuesta siguiente se genera filtrando la búsqueda por esa materia. La materia elegida queda activa para las preguntas siguientes. Las preguntas conceptuales no piden aclaración: la búsqueda ya encuentra el contenido. Se probó primero comparar los scores de la búsqueda, pero los embeddings no separan bien preguntas como "¿cómo se aprueba?" entre syllabus parecidos.
 
-**Flujo de consulta:** la Lambda `api` llama a `RetrieveAndGenerate`. Bedrock busca los fragmentos más parecidos a la pregunta, se los pasa al modelo junto con un prompt que le prohíbe inventar y devuelve la respuesta con citas. El historial de la conversación lo mantiene Bedrock con un `sessionId`.
+**Flujo de consulta:** la Lambda `api` llama a `RetrieveAndGenerate`. La Knowledge Base vectoriza la pregunta con el mismo modelo de embeddings (Titan), busca en S3 Vectors los fragmentos más cercanos, se los pasa al modelo junto con un prompt que le prohíbe inventar y devuelve la respuesta con citas. El historial de la conversación lo mantiene Bedrock con un `sessionId`.
 
 ## Conceptos de cloud que muestra
 
@@ -115,7 +116,7 @@ make url       # URL de la app
 make destroy   # borra todo al terminar
 ```
 
-`sample-docs/` tiene apuntes de Cloud Computing, organizados como `sample-docs/<materia>/` con su `.metadata.json`. El resto de las materias se suben desde la web. Antes de subir material de un curso, sacá los datos personales que tenga (nombres, mails, listas de estudiantes o notas).
+`make seed` sube `sample-docs/<materia>/` al bucket (reemplazando lo que haya) y genera el `.metadata.json` de cada documento con el nombre de la materia (ver `scripts/seed.py`). La carpeta está en `.gitignore`: tiene material de los cursos y archivos pesados que no van al repo. También se pueden subir documentos desde la web. Antes de subir material de un curso, sacá los datos personales que tenga (nombres, mails, listas de estudiantes o notas).
 
 ## Costos
 

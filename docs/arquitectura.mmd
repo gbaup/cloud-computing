@@ -20,7 +20,7 @@ flowchart LR
             subgraph bedrock["Amazon Bedrock (servicios administrados)"]
                 kb@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Knowledge Base<br/>chunking + búsqueda<br/>filtrada por materia", pos: "b", w: 56, h: 56, constraint: "on" }
                 nova@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Nova Lite<br/>generación + clasificación", pos: "b", w: 56, h: 56, constraint: "on" }
-                titan@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Titan Embeddings v2<br/>vectores", pos: "b", w: 56, h: 56, constraint: "on" }
+                titan@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Titan Embeddings v2<br/>vectoriza fragmentos y preguntas", pos: "b", w: 56, h: 56, constraint: "on" }
                 vectors@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/s3.png", label: "S3 Vectors<br/>índice vectorial", pos: "b", w: 56, h: 56, constraint: "on" }
             end
         end
@@ -36,24 +36,25 @@ flowchart LR
     user -->|HTTPS| cdn
     cdn -->|OAC| web
 
-    %% Consulta (links 2-7)
+    %% Consulta (links 2-8)
     user -->|"1. pregunta"| apigw
     apigw -->|2| apifn
     apifn -->|"3. ¿depende de la materia?"| nova
     apifn -->|"4. RetrieveAndGenerate"| kb
-    kb -->|"5. búsqueda"| vectors
-    kb -->|"6. respuesta con citas"| nova
+    kb -->|"5. vectoriza la pregunta"| titan
+    kb -->|"6. búsqueda"| vectors
+    kb -->|"7. respuesta con citas"| nova
 
-    %% Ingesta (links 8-12)
+    %% Ingesta (links 9-13)
     user -->|"a. PUT con URL prefirmada"| docs
     docs -->|"b. evento S3"| ingfn
     ingfn -->|"c. StartIngestionJob"| kb
     kb -->|"d. embeddings"| titan
     kb -->|"e. guarda vectores"| vectors
 
-    %% Transversal: sin flechas, solo para alinear (links 13-14)
+    %% Transversal: sin flechas, solo para alinear (links 14-15)
     tf ~~~ iam ~~~ cw
 
     linkStyle 0,1 stroke:#7a7a7a,stroke-width:2px
-    linkStyle 2,3,4,5,6,7 stroke:#3d4fd6,stroke-width:2px
-    linkStyle 8,9,10,11,12 stroke:#d9822b,stroke-width:2px
+    linkStyle 2,3,4,5,6,7,8 stroke:#3d4fd6,stroke-width:2px
+    linkStyle 9,10,11,12,13 stroke:#d9822b,stroke-width:2px
