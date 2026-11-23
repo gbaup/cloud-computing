@@ -8,43 +8,43 @@ Prueba de concepto estilo "NotebookLM": se suben documentos propios, se hacen pr
 
 El diagrama está escrito como código en [`docs/arquitectura.py`](docs/arquitectura.py) con la librería [diagrams](https://diagrams.mingrammer.com/) (íconos oficiales de AWS). Se regenera con `make diagram`. En azul el flujo de consulta y en naranja el de ingesta.
 
-También está en Mermaid ([`docs/arquitectura.mmd`](docs/arquitectura.mmd)), sin íconos de AWS:
+También está en Mermaid ([`docs/arquitectura.mmd`](docs/arquitectura.mmd)). Los nodos usan los íconos oficiales de AWS guardados en [`docs/icons/`](docs/icons/), referenciados por URL (requiere Mermaid ≥ 11.3 y que el repo sea público):
 
 <details>
 <summary>Ver diagrama en Mermaid</summary>
 
 ```mermaid
 flowchart LR
-    user(["👤 Estudiante<br/>(navegador)"])
+    user@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/users.png", label: "Estudiante<br/>(navegador)", pos: "b", w: 56, h: 56, constraint: "on" }
 
     subgraph aws["AWS Cloud"]
-        cdn["CloudFront<br/>CDN + HTTPS"]
+        cdn@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/cloudfront.png", label: "CloudFront<br/>CDN + HTTPS", pos: "b", w: 56, h: 56, constraint: "on" }
 
         subgraph region["Región us-east-2"]
-            web[("S3 · sitio estático<br/>index.html + config.js")]
+            web@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/s3.png", label: "S3 · sitio estático<br/>index.html + config.js", pos: "b", w: 56, h: 56, constraint: "on" }
 
             subgraph api["API serverless"]
-                apigw["API Gateway<br/>HTTP API"]
-                apifn["λ Lambda api<br/>/ask · /upload-url<br/>/documents · /status"]
+                apigw@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/api-gateway.png", label: "API Gateway<br/>HTTP API", pos: "b", w: 56, h: 56, constraint: "on" }
+                apifn@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/lambda.png", label: "Lambda api<br/>/ask · /upload-url<br/>/documents · /status", pos: "b", w: 56, h: 56, constraint: "on" }
             end
 
             subgraph ingest["Ingesta orientada a eventos"]
-                docs[("S3 · documentos<br/>materia/archivo.pdf<br/>+ .metadata.json")]
-                ingfn["λ Lambda ingest"]
+                docs@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/s3.png", label: "S3 · documentos<br/>materia/archivo.pdf<br/>+ .metadata.json", pos: "b", w: 56, h: 56, constraint: "on" }
+                ingfn@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/lambda.png", label: "Lambda ingest", pos: "b", w: 56, h: 56, constraint: "on" }
             end
 
             subgraph bedrock["Amazon Bedrock (servicios administrados)"]
-                kb["Knowledge Base<br/>chunking + búsqueda<br/>filtrada por materia"]
-                nova["Nova Lite<br/>generación + clasificación"]
-                titan["Titan Embeddings v2<br/>vectores"]
-                vectors[("S3 Vectors<br/>índice vectorial")]
+                kb@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Knowledge Base<br/>chunking + búsqueda<br/>filtrada por materia", pos: "b", w: 56, h: 56, constraint: "on" }
+                nova@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Nova Lite<br/>generación + clasificación", pos: "b", w: 56, h: 56, constraint: "on" }
+                titan@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/bedrock.png", label: "Titan Embeddings v2<br/>vectores", pos: "b", w: 56, h: 56, constraint: "on" }
+                vectors@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/s3.png", label: "S3 Vectors<br/>índice vectorial", pos: "b", w: 56, h: 56, constraint: "on" }
             end
         end
 
         subgraph cross["Transversal"]
-            tf["Terraform<br/>todo como código"]
-            iam["IAM<br/>un rol por componente"]
-            cw["CloudWatch<br/>logs"]
+            tf@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/terraform.png", label: "Terraform<br/>todo como código", pos: "b", w: 56, h: 56, constraint: "on" }
+            iam@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/iam-role.png", label: "IAM<br/>un rol por componente", pos: "b", w: 56, h: 56, constraint: "on" }
+            cw@{ img: "https://raw.githubusercontent.com/gbaup/cloud-computing/main/docs/icons/cloudwatch.png", label: "CloudWatch<br/>logs", pos: "b", w: 56, h: 56, constraint: "on" }
         end
     end
 
@@ -73,20 +73,6 @@ flowchart LR
     linkStyle 0,1 stroke:#7a7a7a,stroke-width:2px
     linkStyle 2,3,4,5,6,7 stroke:#3d4fd6,stroke-width:2px
     linkStyle 8,9,10,11,12 stroke:#d9822b,stroke-width:2px
-
-    classDef compute fill:#fdebd3,stroke:#ed7100,color:#1d1b18
-    classDef storage fill:#e3f1dc,stroke:#3f8624,color:#1d1b18
-    classDef network fill:#ece3fb,stroke:#8c4fff,color:#1d1b18
-    classDef ml fill:#d7f3ee,stroke:#01a88d,color:#1d1b18
-    classDef mgmt fill:#fbe0ea,stroke:#e7157b,color:#1d1b18
-    classDef ext fill:#ffffff,stroke:#232f3e,color:#1d1b18
-
-    class apifn,ingfn compute
-    class web,docs,vectors storage
-    class cdn,apigw network
-    class kb,nova,titan ml
-    class iam,cw,tf mgmt
-    class user ext
 ```
 
 </details>
