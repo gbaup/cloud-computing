@@ -8,6 +8,89 @@ Prueba de concepto estilo "NotebookLM": se suben documentos propios, se hacen pr
 
 El diagrama está escrito como código en [`docs/arquitectura.py`](docs/arquitectura.py) con la librería [diagrams](https://diagrams.mingrammer.com/) (íconos oficiales de AWS). Se regenera con `make diagram`. En azul el flujo de consulta y en naranja el de ingesta.
 
+También está en Mermaid ([`docs/arquitectura.mmd`](docs/arquitectura.mmd)), sin íconos de AWS:
+
+<details>
+<summary>Ver diagrama en Mermaid</summary>
+
+```mermaid
+flowchart LR
+    user(["👤 Estudiante<br/>(navegador)"])
+
+    subgraph aws["AWS Cloud"]
+        cdn["CloudFront<br/>CDN + HTTPS"]
+
+        subgraph region["Región us-east-2"]
+            web[("S3 · sitio estático<br/>index.html + config.js")]
+
+            subgraph api["API serverless"]
+                apigw["API Gateway<br/>HTTP API"]
+                apifn["λ Lambda api<br/>/ask · /upload-url<br/>/documents · /status"]
+            end
+
+            subgraph ingest["Ingesta orientada a eventos"]
+                docs[("S3 · documentos<br/>materia/archivo.pdf<br/>+ .metadata.json")]
+                ingfn["λ Lambda ingest"]
+            end
+
+            subgraph bedrock["Amazon Bedrock (servicios administrados)"]
+                kb["Knowledge Base<br/>chunking + búsqueda<br/>filtrada por materia"]
+                nova["Nova Lite<br/>generación + clasificación"]
+                titan["Titan Embeddings v2<br/>vectores"]
+                vectors[("S3 Vectors<br/>índice vectorial")]
+            end
+        end
+
+        subgraph cross["Transversal"]
+            tf["Terraform<br/>todo como código"]
+            iam["IAM<br/>un rol por componente"]
+            cw["CloudWatch<br/>logs"]
+        end
+    end
+
+    %% Sitio estático (links 0-1)
+    user -->|HTTPS| cdn
+    cdn -->|OAC| web
+
+    %% Consulta (links 2-7)
+    user -->|"1. pregunta"| apigw
+    apigw -->|2| apifn
+    apifn -->|"3. ¿depende de la materia?"| nova
+    apifn -->|"4. RetrieveAndGenerate"| kb
+    kb -->|"5. búsqueda"| vectors
+    kb -->|"6. respuesta con citas"| nova
+
+    %% Ingesta (links 8-12)
+    user -->|"a. PUT con URL prefirmada"| docs
+    docs -->|"b. evento S3"| ingfn
+    ingfn -->|"c. StartIngestionJob"| kb
+    kb -->|"d. embeddings"| titan
+    kb -->|"e. guarda vectores"| vectors
+
+    %% Transversal: sin flechas, solo para alinear (links 13-14)
+    tf ~~~ iam ~~~ cw
+
+    linkStyle 0,1 stroke:#7a7a7a,stroke-width:2px
+    linkStyle 2,3,4,5,6,7 stroke:#3d4fd6,stroke-width:2px
+    linkStyle 8,9,10,11,12 stroke:#d9822b,stroke-width:2px
+
+    classDef compute fill:#fdebd3,stroke:#ed7100,color:#1d1b18
+    classDef storage fill:#e3f1dc,stroke:#3f8624,color:#1d1b18
+    classDef network fill:#ece3fb,stroke:#8c4fff,color:#1d1b18
+    classDef ml fill:#d7f3ee,stroke:#01a88d,color:#1d1b18
+    classDef mgmt fill:#fbe0ea,stroke:#e7157b,color:#1d1b18
+    classDef ext fill:#ffffff,stroke:#232f3e,color:#1d1b18
+
+    class apifn,ingfn compute
+    class web,docs,vectors storage
+    class cdn,apigw network
+    class kb,nova,titan ml
+    class iam,cw,tf mgmt
+    class user ext
+```
+
+</details>
+
 **Flujo de ingesta:** el navegador pide una URL prefirmada a la API y sube el archivo directo a S3. S3 emite un evento, la Lambda `ingest` inicia una sincronización y la Knowledge Base parte el documento en fragmentos de 300 tokens, calcula los embeddings y los guarda en S3 Vectors.
 
 **Materias:** cada documento se sube indicando su materia. Se guarda bajo el prefijo `<materia>/` en S3 junto con un archivo `<doc>.metadata.json` que Bedrock indexa como metadata filtrable.
