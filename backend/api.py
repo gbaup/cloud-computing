@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import unicodedata
 
 import boto3
 from botocore.config import Config
@@ -14,6 +15,8 @@ DATA_SOURCE_ID = os.environ["DATA_SOURCE_ID"]
 MODEL_ARN = os.environ["MODEL_ARN"]
 
 ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".html", ".csv", ".doc", ".docx", ".xls", ".xlsx"}
+METADATA_SUFFIX = ".metadata.json"
+ALL_SUBJECTS = "__todas__"
 
 # Endpoint regional: con el global, las URLs prefirmadas responden 307 y el navegador no sigue el redirect.
 REGION = os.environ["AWS_REGION"]
@@ -24,6 +27,7 @@ s3 = boto3.client(
 )
 agent = boto3.client("bedrock-agent")
 agent_runtime = boto3.client("bedrock-agent-runtime")
+bedrock_runtime = boto3.client("bedrock-runtime")
 
 PROMPT_TEMPLATE = """Sos un asistente que responde preguntas usando únicamente los documentos del usuario.
 Respondé en el mismo idioma de la pregunta, de forma clara y concisa.
@@ -63,6 +67,24 @@ def ask(body):
     if not question:
         raise ValueError("Falta la pregunta")
 
+    # Materia a usar: la que nombra la pregunta, si no la que el usuario ya eligió.
+    # ALL_SUBJECTS significa "buscar en todas" sin volver a preguntar.
+    subjects = list_subjects()
+    subject = mentioned_subject(question, subjects) or body.get("materia")
+    if not subject and len(subjects) > 1 and depends_on_subject(question, subjects):
+        return {
+            "clarify": {
+                "message": "Eso cambia según la materia. ¿A cuál te referís?",
+                "options": subjects,
+            }
+        }
+    if subject == ALL_SUBJECTS:
+        subject = None
+
+    vector_search = {"numberOfResults": 6}
+    if subject:
+        vector_search["filter"] = {"equals": {"key": "materia", "value": subject}}
+
     request = {
         "input": {"text": question},
         "retrieveAndGenerateConfiguration": {
@@ -70,7 +92,7 @@ def ask(body):
             "knowledgeBaseConfiguration": {
                 "knowledgeBaseId": KNOWLEDGE_BASE_ID,
                 "modelArn": MODEL_ARN,
-                "retrievalConfiguration": {"vectorSearchConfiguration": {"numberOfResults": 6}},
+                "retrievalConfiguration": {"vectorSearchConfiguration": vector_search},
                 "generationConfiguration": {"promptTemplate": {"textPromptTemplate": PROMPT_TEMPLATE}},
             },
         },
@@ -89,7 +111,50 @@ def ask(body):
         result = agent_runtime.retrieve_and_generate(**request)
 
     answer, sources = attach_citations(result)
-    return {"answer": answer, "sources": sources, "sessionId": result["sessionId"]}
+    return {"answer": answer, "sources": sources, "sessionId": result["sessionId"], "materia": subject}
+
+
+def depends_on_subject(question, subjects):
+    """Le pregunta al modelo si la respuesta cambia según la materia (reglas del curso, fechas, etc.).
+
+    Comparar scores de la búsqueda no alcanza: los embeddings no separan bien
+    "¿cómo se aprueba?" entre dos syllabus parecidos. Las preguntas conceptuales
+    no necesitan aclaración porque la búsqueda ya encuentra el contenido correcto.
+    """
+    prompt = (
+        f"Materias cargadas: {', '.join(subjects)}.\n"
+        f"Pregunta del estudiante: {question}\n\n"
+        "¿La respuesta depende de qué materia sea (por ejemplo: cómo se aprueba, evaluaciones, "
+        "parciales, fechas, entregas, asistencia, docentes, horarios, bibliografía) y la pregunta "
+        "no indica la materia? Si es una pregunta sobre un concepto o tema, respondé NO.\n"
+        "Respondé solo SI o NO."
+    )
+    response = bedrock_runtime.converse(
+        modelId=MODEL_ARN,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"temperature": 0, "maxTokens": 5},
+    )
+    answer = response["output"]["message"]["content"][0]["text"]
+    return normalize(answer).strip().startswith("si")
+
+
+def list_subjects():
+    response = s3.list_objects_v2(Bucket=DOCS_BUCKET, Delimiter="/")
+    return [p["Prefix"].rstrip("/") for p in response.get("CommonPrefixes", [])]
+
+
+def mentioned_subject(question, subjects):
+    """Detecta si la pregunta nombra una materia (ignora mayúsculas y tildes)."""
+    normalized = normalize(question)
+    for subject in sorted(subjects, key=len, reverse=True):
+        if normalize(subject) in normalized:
+            return subject
+    return None
+
+
+def normalize(text):
+    text = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in text if not unicodedata.combining(c))
 
 
 def attach_citations(result):
@@ -105,7 +170,12 @@ def attach_citations(result):
             snippet = ref.get("content", {}).get("text", "")
             key = (uri, snippet)
             if key not in index_by_key:
-                sources.append({"n": len(sources) + 1, "file": uri.rsplit("/", 1)[-1], "snippet": snippet})
+                sources.append({
+                    "n": len(sources) + 1,
+                    "file": uri.rsplit("/", 1)[-1],
+                    "materia": ref.get("metadata", {}).get("materia"),
+                    "snippet": snippet,
+                })
                 index_by_key[key] = len(sources)
             if index_by_key[key] not in markers:
                 markers.append(index_by_key[key])
@@ -127,11 +197,20 @@ def attach_citations(result):
 
 
 def list_documents():
-    response = s3.list_objects_v2(Bucket=DOCS_BUCKET)
-    docs = [
-        {"name": obj["Key"], "size": obj["Size"], "lastModified": obj["LastModified"].isoformat()}
-        for obj in response.get("Contents", [])
-    ]
+    """Documentos agrupables por materia: la materia es la "carpeta" del objeto en S3."""
+    docs = []
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=DOCS_BUCKET):
+        for obj in page.get("Contents", []):
+            if obj["Key"].endswith(METADATA_SUFFIX):
+                continue
+            subject, _, name = obj["Key"].rpartition("/")
+            docs.append({
+                "key": obj["Key"],
+                "name": name,
+                "materia": subject or None,
+                "size": obj["Size"],
+                "lastModified": obj["LastModified"].isoformat(),
+            })
     return {"documents": sorted(docs, key=lambda d: d["lastModified"], reverse=True)}
 
 
@@ -141,13 +220,26 @@ def upload_url(body):
     if os.path.splitext(filename)[1].lower() not in ALLOWED_EXTENSIONS:
         raise ValueError(f"Formato no soportado. Usá: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
 
+    subject = re.sub(r"\s+", " ", (body.get("materia") or "").replace("/", " ")).strip()[:60]
+    if not subject:
+        raise ValueError("Indicá a qué materia pertenece el documento")
+    key = f"{subject}/{filename}"
+
+    # Archivo de metadata que Bedrock asocia al documento: permite filtrar la búsqueda por materia.
+    s3.put_object(
+        Bucket=DOCS_BUCKET,
+        Key=key + METADATA_SUFFIX,
+        Body=json.dumps({"metadataAttributes": {"materia": subject}}, ensure_ascii=False),
+        ContentType="application/json",
+    )
+
     content_type = body.get("contentType") or "application/octet-stream"
     url = s3.generate_presigned_url(
         "put_object",
-        Params={"Bucket": DOCS_BUCKET, "Key": filename, "ContentType": content_type},
+        Params={"Bucket": DOCS_BUCKET, "Key": key, "ContentType": content_type},
         ExpiresIn=300,
     )
-    return {"url": url, "key": filename, "contentType": content_type}
+    return {"url": url, "key": key, "contentType": content_type}
 
 
 def ingestion_status():

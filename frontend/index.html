@@ -83,6 +83,18 @@
     }
     .drop strong { color: var(--accent); }
     .drop.over, .drop:hover { border-color: var(--accent); background: var(--accent-soft); cursor: pointer; }
+    .subject-field { margin: 0 18px 10px; display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+    .subject-field input {
+      font: inherit; font-size: 14px; color: var(--ink); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; outline: none;
+    }
+    .subject-field input:focus { border-color: var(--accent); }
+    .subject-field input.invalid { border-color: var(--err); }
+    .doc-list .group {
+      padding: 12px 8px 4px; font-size: 11.5px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+    .doc-list .group:hover { background: transparent; }
     .doc-list { list-style: none; margin: 0; padding: 0 10px; overflow: auto; flex: 1; }
     .doc-list li {
       display: flex; gap: 10px; align-items: center;
@@ -149,6 +161,28 @@
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
     .source-card.active .snippet { -webkit-line-clamp: unset; }
+    .clarify-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .clarify-options button {
+      background: var(--panel); border: 1px solid var(--accent); color: var(--accent);
+      padding: 7px 14px; border-radius: 999px; font-size: 13.5px;
+    }
+    .clarify-options button.all { border-color: var(--line); color: var(--muted); }
+    .clarify-options button:hover:not(:disabled) { background: var(--accent); color: #fff; }
+    .clarify-options button:disabled { opacity: .45; cursor: default; }
+    .clarify-options button.chosen { opacity: 1; background: var(--accent); color: #fff; }
+    .active-subject {
+      max-width: 760px; margin: 0 auto 8px; display: flex; align-items: center; gap: 8px;
+      font-size: 12.5px; color: var(--muted);
+    }
+    .active-subject[hidden] { display: none; }
+    .active-subject .chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px;
+      border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 500;
+    }
+    .active-subject .chip button {
+      border: 0; background: transparent; color: inherit; font-size: 14px; line-height: 1; padding: 0 4px;
+    }
+    .source-card .subject { color: var(--muted); font-weight: 400; }
     .thinking { color: var(--muted); display: flex; gap: 10px; align-items: center; }
     .thinking i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: pulse 1s infinite; }
     .thinking i:nth-child(2) { animation-delay: .2s; }
@@ -186,7 +220,7 @@
   <header>
     <div class="brand">
       <h1>Cuaderno</h1>
-      <span>Preguntale a tus documentos · RAG sobre AWS</span>
+      <span>Asistente de estudio · RAG sobre AWS</span>
     </div>
     <div class="spacer"></div>
     <button class="ghost" id="new-chat">Nueva conversación</button>
@@ -197,6 +231,11 @@
       <div class="sources-head">
         <h2>Fuentes</h2><span class="count" id="doc-count"></span>
       </div>
+      <label class="subject-field">
+        Materia del documento
+        <input id="subject-input" list="subject-list" placeholder="Ej: Bases de Datos" autocomplete="off" />
+        <datalist id="subject-list"></datalist>
+      </label>
       <label class="drop" id="drop">
         <input type="file" id="file-input" multiple hidden
                accept=".pdf,.txt,.md,.html,.csv,.doc,.docx,.xls,.xlsx" />
@@ -214,17 +253,20 @@
     <main class="panel chat">
       <div class="messages" id="messages">
         <div class="welcome" id="welcome">
-          <h2>¿Qué querés saber de tus documentos?</h2>
-          <p>Las respuestas salen solo de las fuentes cargadas, con citas a cada fragmento usado.</p>
+          <h2>¿Qué querés saber de tus materias?</h2>
+          <p>Las respuestas salen solo de los documentos cargados, con citas a cada fragmento usado. Si la pregunta aplica a varias materias, te pregunto a cuál te referís.</p>
           <div class="suggestions">
-            <button class="suggestion">¿Cuántos días de vacaciones me corresponden?</button>
-            <button class="suggestion">¿Cómo es el proceso para pasar un cambio a producción?</button>
+            <button class="suggestion">¿Cómo se aprueba el curso?</button>
+            <button class="suggestion">¿Cuándo son las evaluaciones?</button>
             <button class="suggestion">¿Qué diferencia hay entre IaaS, PaaS y SaaS?</button>
-            <button class="suggestion">Resumí la política de trabajo remoto</button>
+            <button class="suggestion">Explicame la elasticidad con un ejemplo</button>
           </div>
         </div>
       </div>
       <div class="composer">
+        <div class="active-subject" id="active-subject" hidden>
+          Buscando en <span class="chip"><span id="active-subject-name"></span><button id="clear-subject" title="Buscar en todas las materias" aria-label="Quitar materia">×</button></span>
+        </div>
         <form id="ask-form">
           <textarea id="question" rows="1" placeholder="Escribí tu pregunta…"></textarea>
           <button class="send" id="send" type="submit" aria-label="Enviar">↑</button>
@@ -237,7 +279,9 @@
   <script>
     const API = window.API_URL;
     const $ = (id) => document.getElementById(id);
+    const ALL_SUBJECTS = "__todas__";
     let sessionId = null;
+    let activeSubject = null;
     let pollTimer = null;
 
     async function api(path, options = {}) {
@@ -266,17 +310,41 @@
         list.innerHTML = `<li class="empty-docs">Todavía no hay documentos.</li>`;
         return;
       }
+
+      // Agrupa por materia (orden alfabético) y llena el autocompletado del campo de materia.
+      const groups = new Map();
       for (const doc of documents) {
-        const ext = doc.name.split(".").pop().slice(0, 4);
-        const li = document.createElement("li");
-        li.innerHTML = `<div class="doc-icon"></div><div style="min-width:0"><div class="doc-name"></div><div class="doc-meta"></div></div>`;
-        li.querySelector(".doc-icon").textContent = ext;
-        li.querySelector(".doc-name").textContent = doc.name;
-        li.querySelector(".doc-name").title = doc.name;
-        li.querySelector(".doc-meta").textContent =
-          `${formatSize(doc.size)} · ${new Date(doc.lastModified).toLocaleDateString("es")}`;
-        list.appendChild(li);
+        const subject = doc.materia || "Sin materia";
+        if (!groups.has(subject)) groups.set(subject, []);
+        groups.get(subject).push(doc);
       }
+      const subjects = [...groups.keys()].sort((a, b) => a.localeCompare(b, "es"));
+      $("subject-list").innerHTML = "";
+      for (const subject of subjects) {
+        const opt = document.createElement("option");
+        opt.value = subject;
+        $("subject-list").appendChild(opt);
+      }
+
+      for (const subject of subjects) {
+        const header = document.createElement("li");
+        header.className = "group";
+        header.textContent = subject;
+        list.appendChild(header);
+        for (const doc of groups.get(subject)) appendDocument(list, doc);
+      }
+    }
+
+    function appendDocument(list, doc) {
+      const ext = doc.name.split(".").pop().slice(0, 4);
+      const li = document.createElement("li");
+      li.innerHTML = `<div class="doc-icon"></div><div style="min-width:0"><div class="doc-name"></div><div class="doc-meta"></div></div>`;
+      li.querySelector(".doc-icon").textContent = ext;
+      li.querySelector(".doc-name").textContent = doc.name;
+      li.querySelector(".doc-name").title = doc.name;
+      li.querySelector(".doc-meta").textContent =
+        `${formatSize(doc.size)} · ${new Date(doc.lastModified).toLocaleDateString("es")}`;
+      list.appendChild(li);
     }
 
     function setStatus(kind, text) {
@@ -308,6 +376,14 @@
     }
 
     async function uploadFiles(files) {
+      const materia = $("subject-input").value.trim();
+      if (!materia) {
+        $("subject-input").classList.add("invalid");
+        $("subject-input").focus();
+        setStatus("err", "Indicá la materia antes de subir");
+        return;
+      }
+      $("subject-input").classList.remove("invalid");
       const since = Date.now() - 5000;
       setStatus("busy", `Subiendo ${files.length} archivo(s)…`);
       try {
@@ -315,7 +391,7 @@
           const contentType = file.type || "application/octet-stream";
           const { url } = await api("/upload-url", {
             method: "POST",
-            body: JSON.stringify({ filename: file.name, contentType }),
+            body: JSON.stringify({ filename: file.name, contentType, materia }),
           });
           const res = await fetch(url, { method: "PUT", body: file, headers: { "content-type": contentType } });
           if (!res.ok) throw new Error(`No se pudo subir ${file.name}`);
@@ -376,8 +452,9 @@
         const card = document.createElement("div");
         card.className = "source-card";
         card.dataset.n = s.n;
-        card.innerHTML = `<header><span class="cite">${s.n}</span><span></span></header><div class="snippet"></div>`;
-        card.querySelector("header span:last-child").textContent = s.file;
+        card.innerHTML = `<header><span class="cite">${s.n}</span><span class="file"></span><span class="subject"></span></header><div class="snippet"></div>`;
+        card.querySelector(".file").textContent = s.file;
+        if (s.materia) card.querySelector(".subject").textContent = `· ${s.materia}`;
         card.querySelector(".snippet").textContent = s.snippet;
         card.addEventListener("click", () => card.classList.toggle("active"));
         cited.appendChild(card);
@@ -394,16 +471,46 @@
         }));
     }
 
-    async function ask(question) {
-      addMessage("user", `<div class="bubble">${escapeHtml(question)}</div>`);
+    function setActiveSubject(subject) {
+      activeSubject = subject && subject !== ALL_SUBJECTS ? subject : null;
+      $("active-subject").hidden = !activeSubject;
+      $("active-subject-name").textContent = activeSubject || "";
+    }
+
+    function renderClarify(container, question, { message, options }) {
+      container.innerHTML = `<div class="answer"><p></p></div><div class="clarify-options"></div>`;
+      container.querySelector("p").textContent = message;
+      const box = container.querySelector(".clarify-options");
+      for (const [label, value] of [...options.map((o) => [o, o]), ["Todas", ALL_SUBJECTS]]) {
+        const btn = document.createElement("button");
+        btn.textContent = label;
+        if (value === ALL_SUBJECTS) btn.className = "all";
+        btn.addEventListener("click", () => {
+          box.querySelectorAll("button").forEach((b) => (b.disabled = true));
+          btn.classList.add("chosen");
+          ask(question, value, label);
+        });
+        box.appendChild(btn);
+      }
+    }
+
+    // `materia` viene de una aclaración; si no, se usa la materia activa de la conversación.
+    async function ask(question, materia = null, choiceLabel = null) {
+      addMessage("user", `<div class="bubble">${escapeHtml(choiceLabel || question)}</div>`);
       const bot = addMessage("bot", `<div class="thinking"><i></i><i></i><i></i> Buscando en tus documentos…</div>`);
       $("send").disabled = true;
       try {
         const data = await api("/ask", {
           method: "POST",
-          body: JSON.stringify({ question, sessionId }),
+          body: JSON.stringify({ question, sessionId, materia: materia || activeSubject }),
         });
+        if (data.clarify) {
+          renderClarify(bot, question, data.clarify);
+          return;
+        }
         sessionId = data.sessionId;
+        // "Todas" responde sin filtrar pero no fija una materia para lo que sigue.
+        setActiveSubject(materia === ALL_SUBJECTS ? activeSubject : data.materia);
         renderAnswer(bot, data);
       } catch (e) {
         bot.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
@@ -432,6 +539,7 @@
     document.querySelectorAll(".suggestion").forEach((b) =>
       b.addEventListener("click", () => ask(b.textContent)));
 
+    $("clear-subject").addEventListener("click", () => setActiveSubject(null));
     $("new-chat").addEventListener("click", () => location.reload());
 
     loadDocuments().catch((e) => setStatus("err", e.message));

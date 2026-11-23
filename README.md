@@ -4,19 +4,15 @@ Prueba de concepto estilo "NotebookLM": se suben documentos propios, se hacen pr
 
 ## Arquitectura
 
-```
-Usuario ──HTTPS──▶ CloudFront ──▶ S3 (sitio estático: index.html + config.js)
-   │
-   ├──▶ API Gateway (HTTP) ──▶ Lambda "api" ──▶ Bedrock RetrieveAndGenerate ──▶ Amazon Nova Lite
-   │                               │                        │
-   │                               │                        ▼
-   │                               │                 Knowledge Base ◀──▶ S3 Vectors (índice vectorial)
-   │                               │                        ▲
-   └──PUT (URL prefirmada)──▶ S3 (documentos) ──evento──▶ Lambda "ingest" ──▶ StartIngestionJob
-                                                         (Titan Embeddings v2 genera los vectores)
-```
+![Arquitectura](docs/arquitectura.png)
+
+El diagrama está escrito como código en [`docs/arquitectura.py`](docs/arquitectura.py) con la librería [diagrams](https://diagrams.mingrammer.com/) (íconos oficiales de AWS). Se regenera con `make diagram`. En azul el flujo de consulta y en naranja el de ingesta.
 
 **Flujo de ingesta:** el navegador pide una URL prefirmada a la API y sube el archivo directo a S3. S3 emite un evento, la Lambda `ingest` inicia una sincronización y la Knowledge Base parte el documento en fragmentos de 300 tokens, calcula los embeddings y los guarda en S3 Vectors.
+
+**Materias:** cada documento se sube indicando su materia. Se guarda bajo el prefijo `<materia>/` en S3 junto con un archivo `<doc>.metadata.json` que Bedrock indexa como metadata filtrable.
+
+**Aclaración de materia:** antes de responder, la API revisa si la pregunta nombra una materia. Si no la nombra y hay más de una cargada, una llamada corta al modelo (temperatura 0) clasifica si la respuesta depende de la materia (evaluación, fechas, asistencia…). En ese caso devuelve "¿A cuál te referís?" con botones, y la respuesta siguiente se genera filtrando la búsqueda por esa materia. La materia elegida queda activa para las preguntas siguientes. Las preguntas conceptuales no piden aclaración: la búsqueda ya encuentra el contenido. Se probó primero comparar los scores de la búsqueda, pero los embeddings no separan bien preguntas como "¿cómo se aprueba?" entre syllabus parecidos.
 
 **Flujo de consulta:** la Lambda `api` llama a `RetrieveAndGenerate`. Bedrock busca los fragmentos más parecidos a la pregunta, se los pasa al modelo junto con un prompt que le prohíbe inventar y devuelve la respuesta con citas. El historial de la conversación lo mantiene Bedrock con un `sessionId`.
 
@@ -34,6 +30,7 @@ Usuario ──HTTPS──▶ CloudFront ──▶ S3 (sitio estático: index.htm
 | IAM y mínimo privilegio | Un rol por componente, cada uno con solo los permisos que usa |
 | Pago por uso y elasticidad | Costo ~0 en reposo; S3 Vectors en vez de OpenSearch (que cobra fijo) |
 | Etiquetado y costos | `default_tags` en todos los recursos para filtrar en Cost Explorer |
+| Metadata y filtrado vectorial | Cada documento lleva su materia como metadata; la búsqueda se filtra por ella |
 | Portabilidad | El modelo generador es una variable (`generation_model_id`); se cambia sin tocar código |
 | Observabilidad | Logs de las Lambdas en CloudWatch |
 
@@ -49,7 +46,7 @@ make url       # URL de la app
 make destroy   # borra todo al terminar
 ```
 
-Los documentos de `sample-docs/` son **ficticios** (manual de empleado y guía de plataforma de una empresa inventada) para mostrar que las respuestas salen de los documentos y no del conocimiento general del modelo. Hay además apuntes de la materia.
+`sample-docs/` tiene apuntes de Cloud Computing, organizados como `sample-docs/<materia>/` con su `.metadata.json`. El resto de las materias se suben desde la web. Antes de subir material de un curso, sacá los datos personales que tenga (nombres, mails, listas de estudiantes o notas).
 
 ## Costos
 
@@ -57,7 +54,7 @@ Estimación para la demo (decenas de documentos, cientos de preguntas): unos poc
 
 ## Extras planteados (fuera del MVP)
 
-- **Varios cuadernos**: colecciones separadas de documentos usando metadata de S3 y filtros en la búsqueda.
+- **"Todas las materias" comparativo**: hoy "Todas" busca sin filtro; se podría responder una sección por materia.
 - **Historial persistente**: guardar conversaciones en DynamoDB (hoy viven en la sesión de Bedrock y se pierden al recargar).
 - **Resumen automático**: al subir un documento, otra Lambda genera un resumen y preguntas sugeridas.
 - **Autenticación**: Cognito delante de la API (hoy es pública con throttling).
